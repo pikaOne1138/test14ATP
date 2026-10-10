@@ -26,7 +26,7 @@ jobs:
           import {mkdirSync,writeFileSync} from 'node:fs';
           import {setTimeout as pause} from 'node:timers/promises';
           const targets=[
-           {key:'a',layout:'field-notes',entry:'https://qa43-field-notes-e2e.qa43-test14atp-preview.pages.dev/',previous:'https://bfe0dc95.qa43-test14atp-preview.pages.dev',paths:['/','/about/','/articles/','/articles/qa-observation/','/topics/','/start-here/'],items:1},
+           {key:'a',layout:'field-notes',entry:'https://qa43-field-notes-e2e.qa43-test14atp-preview.pages.dev/',previous:'https://16d1f10c.qa43-test14atp-preview.pages.dev',paths:['/','/about/','/articles/','/articles/qa-observation/','/topics/','/start-here/'],items:1},
            {key:'b',layout:'clinician',entry:'https://6be11128.qa43-test4atp2-preview.pages.dev/',paths:['/','/about/','/services/','/fit/','/first-visit/','/faq/','/booking/'],items:0}
           ];
           mkdirSync('remote-qa-artifacts',{recursive:true});
@@ -44,8 +44,10 @@ jobs:
             for(const width of [1440,1280,768,390]){
              const page=await browser.newPage({viewport:{width,height:900},deviceScaleFactor:1});
              for(const route of target.paths){
-              const errors=[];const response=await page.goto(origin+route,{waitUntil:'networkidle'});
+              const errors=[];page.removeAllListeners('pageerror');page.removeAllListeners('console');
               page.on('pageerror',e=>errors.push(e.message));
+              page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+              const response=await page.goto(origin+route,{waitUntil:'networkidle'});
               await page.evaluate(()=>document.fonts.ready);
               const audit=await page.evaluate(()=>({
                title:document.title,canonical:document.head.querySelector('link[rel="canonical"]')?.href,
