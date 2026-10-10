@@ -1,0 +1,12 @@
+---
+import config from '../../site.config.json';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import Breadcrumbs from '../components/blocks/Breadcrumbs.astro';
+import UnderlineLink from '../components/effects/UnderlineLink.astro';
+export function getStaticPaths(){return config.navigation.filter(x=>x.id!=='articles'&&x.id!=='faq').map(item=>({params:{page:item.id},props:{item}}))}
+const {item}=Astro.props;
+const copy={"about": ["這是一間 QA 觀察室", "本站沒有真實作者身分或經歷。內容用來驗證從學員資料包建立網站的流程。", "維護方式", "請 AI 在自己的 Repo 建立分支，修改文章或頁面，確認預覽後再決定是否發布。"], "start-here": ["從一篇觀察開始", "先讀觀察紀錄，再查看主題；每篇文章都有獨立網址。", "閱讀順序", "本文、主題索引、關於本站。沒有電子報或會員功能。"], "topics": ["依主題重讀", "目前公開文章屬於「驗收」主題；這不是全文搜尋。", "驗收", "查看文章列表，閱讀這次網站測試使用的公開筆記。"]};
+const text=copy[item.id];
+const base=import.meta.env.BASE_URL;
+---
+<SiteLayout title={item.label}><section class="interior"><Breadcrumbs items={[{label:'首頁',href:base},{label:item.label}]}/><p class="eyebrow">QA 測試內容</p><h1>{text[0]}</h1><p>{text[1]}</p><h2>{text[2]}</h2><p>{text[3]}</p>{item.id==='fit'&&<><h2>不適合與緊急資源</h2><p>本站不能處理即時危險、危機或醫療需求。若有立即危險，請使用所在地的緊急服務或合適專業資源；此處沒有虛構電話。</p></>}{item.id==='booking'&&<p role="status">聯絡未設定；沒有資料送出。</p>}<UnderlineLink href={base+(config.kind==='knowledge'?'articles/':'services/')}>{config.kind==='knowledge'?'閱讀公開文章':'查看服務說明'} →</UnderlineLink></section></SiteLayout>

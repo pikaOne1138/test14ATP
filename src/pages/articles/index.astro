@@ -1,0 +1,10 @@
+---
+import config from '../../../site.config.json';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import Breadcrumbs from '../../components/blocks/Breadcrumbs.astro';
+import SelectedPatterns from '../../components/SelectedPatterns.astro';
+import {getCollection} from 'astro:content';
+const articles=(await getCollection('articles',({data})=>!data.draft)).sort((a,b)=>b.data.publishedAt.getTime()-a.data.publishedAt.getTime());
+const base=import.meta.env.BASE_URL;
+---
+<SiteLayout title="文章"><section class="interior"><Breadcrumbs items={[{label:'首頁',href:base},{label:'文章'}]}/><h1>公開觀察紀錄</h1><p>這是 QA 測試文章列表，草稿不會出現在此處。</p>{articles.length?<div class="links">{articles.map(x=><a href={base+'articles/'+x.id+'/'}>{x.data.title} →</a>)}</div>:<p>目前沒有公開文章。</p>}</section><SelectedPatterns page="articles" /></SiteLayout>

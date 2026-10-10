@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "kind": "knowledge",
+  "layoutSlug": "field-notes",
+  "visualTheme": "paper",
+  "brand": {
+    "name": "QA43 田野觀察室",
+    "primaryColor": "#9A3B2E",
+    "tagline": "QA 測試網站：把觀察整理成可重讀的筆記",
+    "palette": {
+      "primary": "#9A3B2E",
+      "secondary": "#806A54",
+      "accent": "#C58D63",
+      "background": "#F8F5EF",
+      "text": "#28231F"
+    }
+  },
+  "navigation": [
+    {
+      "id": "articles",
+      "label": "文章",
+      "enabled": true
+    },
+    {
+      "id": "topics",
+      "label": "主題",
+      "enabled": true
+    },
+    {
+      "id": "start-here",
+      "label": "開始閱讀",
+      "enabled": true
+    },
+    {
+      "id": "about",
+      "label": "關於我",
+      "enabled": true
+    },
+    {
+      "id": "resources",
+      "label": "資源",
+      "enabled": false
+    }
+  ],
+  "sectionPatterns": [],
+  "primaryCta": {
+    "label": "閱讀文章",
+    "pageId": "articles"
+  },
+  "notes": "專用測試 Repo test14ATP；使用 field-notes 構圖；全站 QA 測試內容，noindex，不正式發布。"
+}
