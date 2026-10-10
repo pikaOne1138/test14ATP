@@ -1,0 +1,100 @@
+name: Remote Cloudflare Preview Chromium QA
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  live-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      QA_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm install --no-save --no-audit --no-fund playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Verify both actual live QA Previews
+        run: |
+          cat > .qa43-remote-preview.mjs <<'QA_SCRIPT'
+          import {chromium} from 'playwright';
+          import {mkdirSync,writeFileSync} from 'node:fs';
+          import {setTimeout as pause} from 'node:timers/promises';
+          const targets=[
+           {key:'a',layout:'field-notes',entry:'https://qa43-field-notes-e2e.qa43-test14atp-preview.pages.dev/',previous:'https://16d1f10c.qa43-test14atp-preview.pages.dev',paths:['/','/about/','/articles/','/articles/qa-observation/','/topics/','/start-here/'],items:1},
+           {key:'b',layout:'clinician',entry:'https://6be11128.qa43-test4atp2-preview.pages.dev/',paths:['/','/about/','/services/','/fit/','/first-visit/','/faq/','/booking/'],items:0}
+          ];
+          mkdirSync('remote-qa-artifacts',{recursive:true});
+          const browser=await chromium.launch();const reports=[];
+          try {
+           for(const target of targets){
+            let origin;
+            for(let n=0;n<90;n++){
+             try{const r=await fetch(target.entry);const t=await r.text();const canonical=t.match(/<link[^>]*rel="canonical"[^>]*href="([^"]+)"/);if(r.ok&&canonical){const u=new URL(canonical[1]);if(!u.hostname.endsWith('.pages.dev'))throw Error('Invalid canonical');if(!target.previous||u.origin!==target.previous){origin=u.origin;break;}}}catch{}
+             await pause(5000);
+            }
+            if(!origin)throw Error('Fresh live Preview unavailable: '+target.layout);
+            const dir='remote-qa-artifacts/'+target.layout;mkdirSync(dir,{recursive:true});
+            const rows=[],failures=[],http=[];
+            for(const width of [1440,1280,768,390]){
+             const page=await browser.newPage({viewport:{width,height:900},deviceScaleFactor:1});
+             for(const route of target.paths){
+              const errors=[];page.removeAllListeners('pageerror');page.removeAllListeners('console');
+              page.on('pageerror',e=>errors.push(e.message));
+              page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+              const response=await page.goto(origin+route,{waitUntil:'networkidle'});
+              await page.evaluate(()=>document.fonts.ready);
+              const audit=await page.evaluate(()=>({
+               title:document.title,canonical:document.head.querySelector('link[rel="canonical"]')?.href,
+               noindex:document.head.querySelector('meta[name="robots"]')?.content.includes('noindex'),
+               metadataInHead:!!document.head.querySelector('meta[name="description"]')&&!!document.head.querySelector('link[rel="canonical"]'),
+               overflow:document.documentElement.scrollWidth>innerWidth+1,
+               brokenImages:[...document.images].filter(x=>!x.complete||!x.naturalWidth).map(x=>x.src),
+               fakeLinks:[...document.querySelectorAll('a')].filter(x=>!x.getAttribute('href')||x.getAttribute('href')==='#').map(x=>x.textContent),
+               minFont:Math.min(...[...document.querySelectorAll('body *')].filter(x=>x.getBoundingClientRect().height>0&&[...x.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(x=>parseFloat(getComputedStyle(x).fontSize))),
+               links:[...document.querySelectorAll('a[href],img[src],link[rel="stylesheet"]')].map(x=>x.href||x.src)
+              }));
+              const badLinks=[];
+              for(const href of new Set(audit.links)){
+               const u=new URL(href);if(u.origin!==origin)continue;
+               const r=await fetch(u);if(!r.ok)badLinks.push({href,status:r.status});
+               if(u.hash&&u.pathname===route){const id=decodeURIComponent(u.hash.slice(1));if(!await page.locator('[id='+JSON.stringify(id)+']').count())badLinks.push({href,reason:'missing anchor'});}
+              }
+              delete audit.links;const headers=response.headers();
+              const row={width,route,status:response.status(),robotsHeader:headers['x-robots-tag'],...audit,badLinks,errors};rows.push(row);
+              if(row.status!==200||!row.noindex||!row.metadataInHead||row.overflow||row.brokenImages.length||row.badLinks.length||row.fakeLinks.length||row.minFont<12||!row.robotsHeader?.includes('noindex')||row.canonical!==origin+route||errors.length)failures.push(row);
+              await page.screenshot({path:dir+'/'+target.layout+'-'+(route==='/'?'home':route.replaceAll('/','-'))+'-'+width+'.png',fullPage:true,animations:'disabled'});
+              if(route==='/'){await page.keyboard.press('Tab');const skip=await page.evaluate(()=>document.activeElement.textContent.trim());await page.keyboard.press('Enter');const focus=await page.evaluate(()=>document.activeElement.id);if(skip!=='跳到主要內容'||focus!=='main')failures.push({width,keyboard:{skip,focus}});}
+              if(route==='/faq/'){await page.locator('details summary').first().focus();await page.keyboard.press('Enter');if(!await page.locator('details').first().evaluate(x=>x.open))failures.push({width,FAQ:'keyboard failed'});}
+             }
+             await page.close();
+            }
+            const texts={};
+            for(const path of ['/rss.xml','/sitemap.xml','/robots.txt','/articles/qa-draft/','/qa43-missing-route/']){
+             const r=await fetch(origin+path);const t=await r.text();texts[path]=t;http.push({path,status:r.status,robotsHeader:r.headers.get('x-robots-tag')});
+             if(path.endsWith('xml')||path==='/robots.txt'){if(!r.ok)failures.push({path,status:r.status});}
+             else if(r.status!==404)failures.push({path,expected:404,status:r.status});
+            }
+            const items=(texts['/rss.xml'].match(/<item>/g)||[]).length;
+            if(items!==target.items||!texts['/robots.txt'].includes('Disallow: /')||texts['/rss.xml'].includes('qa-draft')||texts['/sitemap.xml'].includes('qa-draft')||[texts['/rss.xml'],texts['/sitemap.xml'],texts['/robots.txt']].some(x=>x.includes('qa43.invalid')))failures.push({seo:{items}});
+            if(!texts['/robots.txt'].includes(origin+'/sitemap.xml'))failures.push({robots:'wrong sitemap URL'});
+            const report={layout:target.layout,origin,testRunnerHead:process.env.QA_HEAD_SHA,rows,http,feedItems:items,failures};reports.push(report);
+            writeFileSync(dir+'/results.json',JSON.stringify(report,null,2));
+           }
+           writeFileSync('remote-qa-artifacts/summary.json',JSON.stringify(reports.map(x=>({layout:x.layout,origin:x.origin,rows:x.rows.length,feedItems:x.feedItems,failures:x.failures})),null,2));
+           console.log(JSON.stringify(reports.map(x=>({layout:x.layout,origin:x.origin,checks:x.rows.length,failures:x.failures.length}))));
+           if(reports.some(x=>x.failures.length))process.exitCode=1;
+          }finally{await browser.close();}
+          QA_SCRIPT
+          node .qa43-remote-preview.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: learner-live-preview-qa
+          path: remote-qa-artifacts
+          retention-days: 14
